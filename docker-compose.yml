@@ -1,0 +1,17 @@
+services:
+  echo-database:
+    image: mysql:8.4
+    container_name: echo-database
+    environment:
+      - TZ=America/Los_Angeles
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-echo_db}
+      - MYSQL_USER=${MYSQL_USER:-echo_app}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - echo_database_data:/var/lib/mysql
+      - ./init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+
+volumes:
+  echo_database_data:

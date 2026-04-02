@@ -12,6 +12,12 @@ services:
       - echo_database_data:/var/lib/mysql
       - ./init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
+    networks:
+      - echo-net
 
 volumes:
   echo_database_data:
+
+networks:
+  echo-net:
+    external: true

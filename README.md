@@ -1,55 +1,61 @@
 # EchoDatabase
 
-This repository owns Echo's application schema and its ordered `init/*.sql`
-files. The full stack and upgrade runner live in
+Echo owns the active messaging/media/carrier schema in `init/*.sql`.
+Identity owns users, tenants, memberships, sessions and tenant-number access;
+PlatformConfig owns runtime settings. The ordered upgrade runner lives in
 [EchoOrchestrator](https://github.com/localsplash/EchoOrchestrator).
 
-## Legacy settings retirement
+## Disposable Dev retirement
 
-`init/009_settings.sql` is a released migration. Its comments describe the
-historical design. Runtime settings now move to NocoDB
-`PlatformConfig/cfg_tbl_Setting` under `*`, `echo`, `echo-web` and `echo-service`.
-EchoMedia currently reads only deployment environment variables (`PORT` and
-`MEDIA_ROOT`); it has no SQL settings reader to replace.
+The current Dev decision intentionally deletes obsolete configuration and local
+authentication/provenance data. No backup, rollback copy or preservation window
+is required for this cleanup. Deploy the matching EchoWeb/EchoService revisions
+with environment-provided NocoDB credentials first, then apply
+`init/013_retire_legacy_configuration_and_auth.sql`.
 
-**Keep `echo_tbl_Settings` and its values through migration, deployment
-verification and the agreed rollback window.** This change deliberately adds no
-DROP migration and does not alter the released seed file. Explicit legacy modes
-in EchoWeb/EchoService and old deployed images may still read the table.
+The migration drops exactly these tables, with foreign-key enforcement kept on:
 
-[Issue #8](https://github.com/localsplash/EchoDatabase/issues/8) remains the gate
-for a later destructive migration. Attach evidence for every item before that
-migration is proposed:
+- `echo_tbl_Settings`
+- `echo_tbl_PlatformOrgMap`, `echo_tbl_PlatformUserMap`
+- `auth_tbl_Identity`, `auth_tbl_Membership`
+- `auth_tbl_Session`, `auth_tbl_SsoNonce`
+- `auth_tbl_User`, `auth_tbl_Org`
 
-1. EchoService and EchoWeb's PlatformConfig implementations are merged and the
-   deployed image/commit and `SETTINGS_MODE=platform` are recorded for each.
-2. Reviewed source rows are copied to the correct scopes (legacy `*` usually
-   becomes `echo`, `web` becomes `echo-web`, `service` becomes `echo-service`),
-   preserving secrets outside ordinary logs and keeping source values intact.
-3. Verify cold startup, refresh, failure behavior, settings-dependent requests,
-   carrier webhooks, outgoing messages, browser access and media retrieval in the
-   real deployment. Record results without customer content or credentials.
-4. Inventory all other SQL readers, scripts and deployment overrides. Confirm
-   that none requires this table after retirement. EchoMedia's absence of a SQL
-   reader is implementation evidence, not a substitute for testing its deployment.
-5. Agree a rollback deadline and demonstrate recovery using the retained table,
-   prior images and protected deployment configuration. Let the window expire
-   before removing the compatibility reader and proposing the DROP release.
-6. Take a consistent `mysqldump --single-transaction --routines` and a protected
-   PlatformConfig export; rehearse restore before applying the later migration.
+Child tables are dropped before their parents; `DROP TABLE IF EXISTS` allows
+safe repeat execution after an interrupted run. No `sms_*` table/routine or
+`echo_tbl_SchemaMigration` ledger is removed. Their data is still in active use.
+No Identity `platform_db` or OfficePulse/Asterisk vendor object is changed here.
 
-Do not equate merged code with deployment evidence. No live verification or
-rollback-window completion is claimed by this documentation.
+The old init files 005–009 and 012 are removed, together with the unused mapping
+importer, so a fresh database never recreates obsolete objects. EchoOrchestrator's
+ledger records filenames, not checksums; old ledger rows may remain as execution
+history, and existing databases receive the new numbered 013 migration. There
+is no technical dependency requiring the deleted seed files to stay in `init/`.
 
-`echo_tbl_SchemaMigration` stays: EchoOrchestrator uses it as its migration
-ledger. Identity owns its separate platform schema and shared-number registry.
-The installed OfficePulse/Asterisk PBX owns extensions, queues and applied DID
-routes; EchoDatabase must not copy or migrate vendor PBX tables. POC PBX reads go
-through the OfficePulse integration API.
+Before applying the migration, inspect the target database's foreign keys and
+stored routines for unexpected references to the listed objects. Current source
+has no active consumer: EchoWeb's unused legacy helper/import scripts are removed,
+EchoService and EchoWeb read only PlatformConfig, and messaging schema foreign
+keys reference only messaging/carrier objects. Stop legacy images before cleanup.
+
+Track exact deployed versions, applied SQL, table absence, startup and tenant
+access checks in [issue #8](https://github.com/localsplash/EchoDatabase/issues/8)
+and [EchoOrchestrator #11](https://github.com/localsplash/EchoOrchestrator/issues/11).
+This supersedes the earlier preservation and rollback-window plan.
+
+## Validation
+
+EchoWeb's `src/platform.integration.test.ts`, with this checkout provided as
+`ECHO_DATABASE_SOURCE` and a disposable MySQL 8.4 `TEST_DB_URL`, initializes the
+complete current fresh schema and exercises a messaging routine. It then creates
+populated legacy tables with foreign keys, applies migration 013 twice, and
+checks table removal, active messaging/ledger retention, and central session
+access without local auth/mapping tables. It recreates only `echo_platform_test`.
 
 ## Local development
 
-`docker compose up -d` creates a local MySQL instance and applies `init/` only to
-an empty volume. For an existing database, use EchoOrchestrator's documented
-migration workflow; do not replay all released files manually. Local example
-credentials are not production configuration.
+`docker compose up -d` creates a MySQL instance and applies current `init/` files
+only to an empty volume. Existing databases use EchoOrchestrator's ordered
+migration runner. Application DB coordinates stay deployment bootstrap; EchoMedia
+still needs only its port and media mount path. Asterisk/OfficePulse own extensions,
+queues, memberships and applied DID routes; POC PBX reads use its integration API.
